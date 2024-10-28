@@ -15,9 +15,8 @@ struct ServerConfig {
 
 // 命令定义
 namespace Command {
-    const std::string GET_NOTICE = "GET_NOTICE";
+    const std::string INIT_SERVER_INFO = "INIT_SERVER_INFO";  // 合并的命令
     const std::string GET_FILE = "GET_FILE";
-    const std::string GET_SERVER_INFO = "GET_SERVER_INFO";  // 添加新命令
 }
 
 // 补丁文件信息结构
@@ -36,8 +35,7 @@ class GameUpdater {
 public:
     GameUpdater(const std::string& server_ip, unsigned short server_port, HWND hwnd);
     void start_update_check();
-    void get_notice(NoticeCallback callback);
-    void get_server_info(ServerInfoCallback callback);  // 添加新方法
+    void init_server_info(ServerInfoCallback server_callback);
     HWND hwnd_;
 
 private:
@@ -50,19 +48,19 @@ private:
     asio::ip::tcp::socket socket_;
     std::string server_ip_;
     unsigned short server_port_;
-    NoticeCallback notice_callback_;
-    ServerInfoCallback server_info_callback_;  // 添加新的回调
+
+    ServerInfoCallback server_info_callback_;
 };
 
 // 全局函数声明
 void check_and_start_game(HWND hwnd);
-void update_server_notice(HWND hwnd, const std::string& notice);
 void update_server_info(HWND hwnd);
 
-// 添加全局服务器信息
+// 全局服务器信息
 struct ServerInfo {
     static std::string ip;
     static std::string port;
     static std::string name;
+    static std::string notice;  // 添加通知字段
     static bool isConnected;
 };

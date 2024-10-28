@@ -7,7 +7,6 @@
 
 namespace fs = std::filesystem;  // 添加命名空间别名
 
-
 // 定义服务器配置
 const char* ServerConfig::SERVER_IP = "127.0.0.1";
 const unsigned short ServerConfig::SERVER_PORT = 12345;
@@ -16,6 +15,7 @@ const unsigned short ServerConfig::SERVER_PORT = 12345;
 std::string ServerInfo::ip;
 std::string ServerInfo::port;
 std::string ServerInfo::name;
+std::string ServerInfo::notice = "正在获取服务器通知...";  // 添加通知变量定义并设置初始值
 bool ServerInfo::isConnected = false;
 
 GameUpdater::GameUpdater(const std::string& server_ip, unsigned short server_port, HWND hwnd)
@@ -161,47 +161,9 @@ void check_and_start_game(HWND hwnd) {
     }).detach();
 }
 
-
-// 修改消息处理函
-std::string ProcessMessage(const std::string& message) {
-    // 跳过 BOM 标记（如果存在）
-    size_t startPos = 0;
-    if (message.length() >= 3 && 
-        message[0] == (char)0xEF && 
-        message[1] == (char)0xBB && 
-        message[2] == (char)0xBF) {
-        startPos = 3;
-    }
-
-    // 查找消息结束标记
-    size_t endPos = message.find("<END_OF_MESSAGE>", startPos);
-    if (endPos == std::string::npos) {
-        return "";
-    }
-    
-    std::string content = message.substr(startPos, endPos - startPos);
-    
-    // 分割类型和内容
-    size_t separatorPos = content.find("|");
-    if (separatorPos == std::string::npos) {
-        return "";
-    }
-    
-    std::string type = content.substr(0, separatorPos);
-    std::string messageContent = content.substr(separatorPos + 1);
-    
-    // 还原换行符
-    std::string::size_type pos = 0;
-    while ((pos = messageContent.find("\\n", pos)) != std::string::npos) {
-        messageContent.replace(pos, 2, "\n");
-        pos += 1;
-    }
-    
-    return messageContent;
-}
-
-void GameUpdater::get_notice(NoticeCallback callback) {
-    notice_callback_ = callback;
+// 添加新的处理函数
+void GameUpdater::init_server_info(ServerInfoCallback server_callback) {
+    server_info_callback_ = server_callback;
     
     std::thread([this]() {
         try {
@@ -210,89 +172,17 @@ void GameUpdater::get_notice(NoticeCallback callback) {
                 socket_.connect(endpoint);
             }
 
-            // 发送获取通知命令
-            std::string request = Command::GET_NOTICE + "\n";
+            // 发送初始化命令
+            std::string request = Command::INIT_SERVER_INFO + "\n";
             asio::write(socket_, asio::buffer(request));
 
             // 读取响应
-            std::vector<char> buffer(1024 * 1024); // 1MB buffer
+            std::vector<char> buffer(1024 * 1024);
             std::string response_str;
             
             while (true) {
                 try {
-                    size_t bytes_read = socket_.read_some(asio::buffer(buffer));
-                    if (bytes_read > 0) {
-                        response_str.append(buffer.data(), bytes_read);
-                        
-                        if (response_str.find("<END_OF_MESSAGE>") != std::string::npos) {
-                            break;
-                        }
-                    }
-                }
-                catch (const asio::error_code& e) {
-                    MessageBoxW(NULL, L"读取数据失败", L"错误", MB_OK);
-                    break;
-                }
-            }
-
-            // 处理消息
-            std::string processed_content = ProcessMessage(response_str);
-            if (!processed_content.empty()) {
-                if (notice_callback_) {
-                    char* notice_copy = _strdup(processed_content.c_str());
-                    PostMessage(hwnd_, WM_USER + 1, 0, (LPARAM)notice_copy);
-                }
-            }
-
-            // 关闭连接
-            if (socket_.is_open()) {
-                socket_.close();
-            }
-        }
-        catch (std::exception& e) {
-            if (socket_.is_open()) {
-                socket_.close();
-            }
-            MessageBoxW(NULL, L"获取通知失败", L"错误", MB_OK | MB_ICONERROR);
-        }
-    }).detach();
-}
-
-void update_server_notice(HWND hwnd, const std::string& notice) {
-    GameUpdater* updater = new GameUpdater(ServerConfig::SERVER_IP, ServerConfig::SERVER_PORT, hwnd);
-    updater->get_notice([updater](const std::string& server_notice) {
-        // 使用 updater 中保存的窗口句柄
-        char* notice_copy = _strdup(server_notice.c_str());
-        PostMessage(updater->hwnd_, WM_USER + 1, 0, (LPARAM)notice_copy);
-        delete updater;
-    });
-}
-
-void GameUpdater::get_server_info(ServerInfoCallback callback) {
-    server_info_callback_ = callback;
-    
-    std::thread([this]() {
-        try {
-            if (!socket_.is_open()) {
-                asio::ip::tcp::endpoint endpoint(asio::ip::address::from_string(server_ip_), server_port_);
-                socket_.connect(endpoint);
-            }
-
-            // 发送获取服务器信息命令
-            std::string request = Command::GET_SERVER_INFO + "\n";
-            //MessageBoxW(NULL, L"发送GET_SERVER_INFO命令", L"调试", MB_OK);
-            asio::write(socket_, asio::buffer(request));
-
-            // 读取响应
-            std::vector<char> buffer(1024);
-            std::string response_str;
-            
-            while (true) {
-                try {
-                    if (!socket_.is_open()) {
-                        MessageBoxW(NULL, L"Socket已关闭", L"错误", MB_OK);
-                        break;
-                    }
+                    if (!socket_.is_open()) break;
 
                     size_t bytes_read = socket_.read_some(asio::buffer(buffer));
                     if (bytes_read > 0) {
@@ -304,7 +194,6 @@ void GameUpdater::get_server_info(ServerInfoCallback callback) {
                     }
                 }
                 catch (const asio::system_error& e) {
-                    MessageBoxW(NULL, L"读取数据时发生错误", L"错误", MB_OK);
                     break;
                 }
             }
@@ -322,50 +211,39 @@ void GameUpdater::get_server_info(ServerInfoCallback callback) {
             if (endPos != std::string::npos) {
                 std::string content = response_str.substr(startPos, endPos - startPos);
                 
-                // 解析 "SERVER_INFO|IP|PORT|NAME" 格式
-                size_t firstSep = content.find('|');
-                if (firstSep != std::string::npos) {
-                    size_t secondSep = content.find('|', firstSep + 1);
-                    if (secondSep != std::string::npos) {
-                        size_t thirdSep = content.find('|', secondSep + 1);
-                        if (thirdSep != std::string::npos) {
-                            std::string type = content.substr(0, firstSep);
-                            std::string ip = content.substr(firstSep + 1, secondSep - firstSep - 1);
-                            std::string port = content.substr(secondSep + 1, thirdSep - secondSep - 1);
-                            std::string name = content.substr(thirdSep + 1);
+                // 解析 "SERVER_INFO|IP|PORT|NAME|NOTICE" 格式
+                std::vector<std::string> parts;
+                size_t pos = 0;
+                size_t prev = 0;
+                while ((pos = content.find('|', prev)) != std::string::npos) {
+                    parts.push_back(content.substr(prev, pos - prev));
+                    prev = pos + 1;
+                }
+                parts.push_back(content.substr(prev));
 
-                            // 转换服务器名称为Unicode
-                            int wlen = MultiByteToWideChar(CP_UTF8, 0, name.c_str(), -1, NULL, 0);
-                            if (wlen > 0) {
-                                std::vector<wchar_t> wstr(wlen);
-                                if (MultiByteToWideChar(CP_UTF8, 0, name.c_str(), -1, wstr.data(), wlen) > 0) {
-                                    // 显示转换后的数据
-                                    //std::wstring parse_result = L"服务器信息:\n"
-                                    //    L"IP: " + std::wstring(ip.begin(), ip.end()) + L"\n"
-                                    //    L"端口: " + std::wstring(port.begin(), port.end()) + L"\n"
-                                    //    L"名称: " + std::wstring(wstr.data());
-                                    //MessageBoxW(NULL, parse_result.c_str(), L"服务器信息", MB_OK);
+                if (parts.size() >= 5 && parts[0] == "SERVER_INFO") {
+                    std::string ip = parts[1];
+                    std::string port = parts[2];
+                    std::string name = parts[3];
+                    std::string notice = parts[4];
 
-                                    if (type == "SERVER_INFO" && server_info_callback_) {
-                                        // 将Unicode转回UTF-8
-                                        int utf8len = WideCharToMultiByte(CP_UTF8, 0, wstr.data(), -1, NULL, 0, NULL, NULL);
-                                        if (utf8len > 0) {
-                                            std::vector<char> utf8str(utf8len);
-                                            if (WideCharToMultiByte(CP_UTF8, 0, wstr.data(), -1, utf8str.data(), utf8len, NULL, NULL) > 0) {
-                                                // 更新全局服务器信息
-                                                ServerInfo::ip = ip;
-                                                ServerInfo::port = port;
-                                                ServerInfo::name = std::string(utf8str.data());
-                                                ServerInfo::isConnected = true;
-                                                
-                                                // 调用回调
-                                                server_info_callback_(ip, port, ServerInfo::name);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    // 还原通知中的换行符
+                    std::string::size_type pos = 0;
+                    while ((pos = notice.find("\\n", pos)) != std::string::npos) {
+                        notice.replace(pos, 2, "\n");
+                        pos += 1;
+                    }
+
+                    // 更新全局服务器信息
+                    ServerInfo::ip = ip;
+                    ServerInfo::port = port;
+                    ServerInfo::name = name;  // 保持 UTF-8 编码
+                    ServerInfo::notice = notice;  // 直接更新通知内容
+                    ServerInfo::isConnected = true;
+
+                    // 调用服务器信息回调
+                    if (server_info_callback_) {
+                        server_info_callback_(ip, port, name);
                     }
                 }
             }
@@ -376,7 +254,7 @@ void GameUpdater::get_server_info(ServerInfoCallback callback) {
                     socket_.close();
                 }
             }
-            catch (const std::exception& e) {
+            catch (...) {
                 // 忽略关闭时的错误
             }
         }
@@ -390,31 +268,20 @@ void GameUpdater::get_server_info(ServerInfoCallback callback) {
             catch (...) {
                 // 忽略关闭时的错误
             }
-            std::wstring error_msg = L"获取服务器信息错误: " + std::wstring(e.what(), e.what() + strlen(e.what()));
-            MessageBoxW(NULL, error_msg.c_str(), L"错误", MB_OK | MB_ICONERROR);
+            MessageBoxW(NULL, L"初始化服务器信息失败", L"错误", MB_OK | MB_ICONERROR);
         }
     }).detach();
 }
 
-void update_server_info(HWND hwnd) {
+// 修改 update_server_info 函数
+void update_server_info(HWND hwnd) 
+{
     GameUpdater* updater = new GameUpdater(ServerConfig::SERVER_IP, ServerConfig::SERVER_PORT, hwnd);
-    updater->get_server_info([updater](const std::string& ip, const std::string& port, const std::string& name) {
-        // 显示完整的服务器信息
-        //std::wstring info = L"服务器IP: " + std::wstring(ip.begin(), ip.end()) + 
-        //                   L"\n端口: " + std::wstring(port.begin(), port.end()) +
-        //                   L"\n服务器名称: " + std::wstring(name.begin(), name.end());
-        //MessageBoxW(NULL, info.c_str(), L"服务器信息", MB_OK);
-        delete updater;
-    });
+    
+    updater->init_server_info(
+        // 服务器信息回调
+        [updater](const std::string& ip, const std::string& port, const std::string& name) {
+            delete updater;
+        }
+    );
 }
-
-
-
-
-
-
-
-
-
-
-

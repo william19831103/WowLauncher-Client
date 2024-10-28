@@ -18,9 +18,6 @@ static UINT g_ResizeWidth = 0, g_ResizeHeight = 0;
 static ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 ID3D11ShaderResourceView* g_background = nullptr;  // 定义 g_background
 
-// 添加服务器通知全局变量
-static std::string server_notice = "正在获取服务器通知...";
-
 // 函数声明
 bool CreateDeviceD3D(HWND hWnd);
 void CleanupDeviceD3D();
@@ -91,7 +88,7 @@ int WinMain(
         QueryPerformanceCounter(&current_time);
         float delta_time = (float)(current_time.QuadPart - last_time.QuadPart) * 1000.0f / frequency.QuadPart;
 
-        // 如果距离上一帧时间太短，则等待
+        // 如果距离上一帧时间太短，则待
         if (delta_time < TARGET_FRAMETIME)
         {
             Sleep((DWORD)(TARGET_FRAMETIME - delta_time));
@@ -271,26 +268,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
             ::SetWindowPos(hWnd, nullptr, suggested_rect->left, suggested_rect->top, suggested_rect->right - suggested_rect->left, suggested_rect->bottom - suggested_rect->top, SWP_NOZORDER | SWP_NOACTIVATE);
         }
         break;
-    case WM_USER + 1:  // 处理通知更新
-    {
-        char* notice = (char*)lParam;
-        if (notice) {
-            // 保持 UTF-8 编码
-            server_notice = std::string(notice);
-            
-            // 调试输出
-            int wlen = MultiByteToWideChar(CP_UTF8, 0, notice, -1, NULL, 0);
-            if (wlen > 0) {
-                std::vector<wchar_t> wstr(wlen);
-                if (MultiByteToWideChar(CP_UTF8, 0, notice, -1, wstr.data(), wlen) > 0) {
-                    //MessageBoxW(NULL, wstr.data(), L"收到的通知内容", MB_OK);
-                }
-            }
-            
-            free(notice);
-        }
-        return 0;
-    }
+
     }
     return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 }
@@ -308,11 +286,8 @@ void MainWindow() {
         LoadTextureFromFile("Queen.jpg", &g_background, &bg_width, &bg_height);
         main_hwnd = GetActiveWindow();  // 保存窗口句柄
         
-        // 获取服务器通
-        update_server_notice(main_hwnd, server_notice);
-        
-        // 获取服务器信息
-        update_server_info(main_hwnd);
+        // 获取服务器信息和通知
+        update_server_info(main_hwnd);  // 这里调用了 update_server_info
         
         first_time = false;
     }
@@ -397,9 +372,6 @@ void MainWindow() {
             if (wlen > 0) {
                 std::vector<wchar_t> wstr(wlen);
                 if (MultiByteToWideChar(CP_UTF8, 0, ServerInfo::name.c_str(), -1, wstr.data(), wlen) > 0) {
-                    // 调试输出
-                    //MessageBoxW(NULL, (L"显示服务器名称: [" + std::wstring(wstr.data()) + L"]").c_str(), L"调试", MB_OK);
-                    
                     // 使用转换后的 UTF-8 字符串显示
                     std::string utf8_name(ServerInfo::name);
                     ImGui::Text("%s", utf8_name.c_str());
@@ -422,7 +394,7 @@ void MainWindow() {
         
         // 使用默认字体（已设置为支持中文的字体）
         ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
-        ImGui::TextUnformatted(server_notice.c_str());  // 使用 TextUnformatted 来显示 UTF-8 文本
+        ImGui::TextUnformatted(ServerInfo::notice.c_str());  // 使用 TextUnformatted 来显示 UTF-8 文本
         ImGui::PopTextWrapPos();
         
         ImGui::SetWindowFontScale(1.0f);
@@ -458,6 +430,11 @@ void MainWindow() {
         exit(0);
     }
 }
+
+
+
+
+
 
 
 
