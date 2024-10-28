@@ -1,5 +1,14 @@
 ﻿#pragma execution_character_set("utf-8")
+
+// Windows 相关头文件应该在最前面
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
+// 其他头文件
 #include "main.h"
+#include "GameManager.h"
 
 // 定义全局变量
 static ID3D11Device* g_pd3dDevice = nullptr;
@@ -8,6 +17,9 @@ static IDXGISwapChain* g_pSwapChain = nullptr;
 static UINT g_ResizeWidth = 0, g_ResizeHeight = 0;
 static ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 ID3D11ShaderResourceView* g_background = nullptr;  // 定义 g_background
+
+// 添加服务器通知全局变量
+static std::string server_notice = "正在获取服务器通知...";
 
 // 函数声明
 bool CreateDeviceD3D(HWND hWnd);
@@ -46,7 +58,9 @@ int WinMain(
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;    
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;      
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;   
-    ImGui::StyleColorsLight();
+    
+    ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\MSYH.TTC", 20.0f, nullptr, io.Fonts->GetGlyphRangesChineseFull());
+
     ImGuiStyle& style = ImGui::GetStyle();
     if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
     {
@@ -56,8 +70,6 @@ int WinMain(
 
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
-
-    ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\MSYH.TTC", 20.0f, nullptr, io.Fonts->GetGlyphRangesChineseFull());
 
     bool show_demo_window = true;
     bool show_another_window = false;
@@ -203,6 +215,34 @@ void CleanupRenderTarget()
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
+// 修改 UTF-8 转换函数
+std::string utf8_to_gbk(const char* utf8_str) {
+    try {
+        // 先将 UTF-8 转换为 Unicode
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8_str, -1, NULL, 0);
+        if (wlen == 0) return "";
+        
+        std::vector<wchar_t> wstr(wlen);
+        if (MultiByteToWideChar(CP_UTF8, 0, utf8_str, -1, wstr.data(), wlen) == 0) {
+            return "";
+        }
+
+        // 再将 Unicode 转换为 GBK
+        int len = WideCharToMultiByte(CP_ACP, 0, wstr.data(), -1, NULL, 0, NULL, NULL);
+        if (len == 0) return "";
+        
+        std::vector<char> str(len);
+        if (WideCharToMultiByte(CP_ACP, 0, wstr.data(), -1, str.data(), len, NULL, NULL) == 0) {
+            return "";
+        }
+
+        return std::string(str.data());
+    }
+    catch (...) {
+        return "";
+    }
+}
+
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
@@ -231,6 +271,26 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
             ::SetWindowPos(hWnd, nullptr, suggested_rect->left, suggested_rect->top, suggested_rect->right - suggested_rect->left, suggested_rect->bottom - suggested_rect->top, SWP_NOZORDER | SWP_NOACTIVATE);
         }
         break;
+    case WM_USER + 1:  // 处理通知更新
+    {
+        char* notice = (char*)lParam;
+        if (notice) {
+            // 保持 UTF-8 编码
+            server_notice = std::string(notice);
+            
+            // 调试输出
+            int wlen = MultiByteToWideChar(CP_UTF8, 0, notice, -1, NULL, 0);
+            if (wlen > 0) {
+                std::vector<wchar_t> wstr(wlen);
+                if (MultiByteToWideChar(CP_UTF8, 0, notice, -1, wstr.data(), wlen) > 0) {
+                    //MessageBoxW(NULL, wstr.data(), L"收到的通知内容", MB_OK);
+                }
+            }
+            
+            free(notice);
+        }
+        return 0;
+    }
     }
     return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 }
@@ -242,9 +302,18 @@ void MainWindow() {
     static bool first_time = true;
     static int bg_width = 0, bg_height = 0;
     static bool serverOnline = true;
+    static HWND main_hwnd = NULL;
     
     if (first_time) {
         LoadTextureFromFile("Queen.jpg", &g_background, &bg_width, &bg_height);
+        main_hwnd = GetActiveWindow();  // 保存窗口句柄
+        
+        // 获取服务器通
+        update_server_notice(main_hwnd, server_notice);
+        
+        // 获取服务器信息
+        update_server_info(main_hwnd);
+        
         first_time = false;
     }
 
@@ -320,22 +389,43 @@ void MainWindow() {
         ImGui::SetCursorPos(ImVec2(start_x + circle_radius*2 + 10, 20));
         ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]);
         ImGui::SetWindowFontScale(1.3f);
-        ImGui::Text("炽焰战网");
+        
+        // 显示服务器名称（如果有）
+        if (!ServerInfo::name.empty() && ServerInfo::isConnected) {
+            // 转换为 Unicode 显示
+            int wlen = MultiByteToWideChar(CP_UTF8, 0, ServerInfo::name.c_str(), -1, NULL, 0);
+            if (wlen > 0) {
+                std::vector<wchar_t> wstr(wlen);
+                if (MultiByteToWideChar(CP_UTF8, 0, ServerInfo::name.c_str(), -1, wstr.data(), wlen) > 0) {
+                    // 调试输出
+                    //MessageBoxW(NULL, (L"显示服务器名称: [" + std::wstring(wstr.data()) + L"]").c_str(), L"调试", MB_OK);
+                    
+                    // 使用转换后的 UTF-8 字符串显示
+                    std::string utf8_name(ServerInfo::name);
+                    ImGui::Text("%s", utf8_name.c_str());
+                }
+            }
+        } else {
+            ImGui::Text("炽焰战网");
+        }
+        
         ImGui::SetWindowFontScale(1.0f);
         ImGui::PopFont();
-        
+
+        // 更新服务器状态指示器
+        serverOnline = ServerInfo::isConnected;
+
         // 通知区域
         ImGui::SetCursorPos(ImVec2(start_x + button_width + spacing, 20));
         ImGui::BeginChild("通知区域", ImVec2(600, 400), true);
-        ImGui::SetWindowFontScale(1.3f);  // 设置字体缩放
-        ImGui::TextWrapped(
-            "欢迎来到炽焰战网\n"
-            "服务器近期更新内容：\n"
-            "1. 新增XXX副本\n"
-            "2. 优化游戏性能\n"
-            "3. 修复已知问题\n"
-            "...");
-        ImGui::SetWindowFontScale(1.0f);  // 恢复字体缩放
+        ImGui::SetWindowFontScale(1.3f);
+        
+        // 使用默认字体（已设置为支持中文的字体）
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+        ImGui::TextUnformatted(server_notice.c_str());  // 使用 TextUnformatted 来显示 UTF-8 文本
+        ImGui::PopTextWrapPos();
+        
+        ImGui::SetWindowFontScale(1.0f);
         ImGui::EndChild();
 
         // 底部按钮 - 所有四个按钮
@@ -356,7 +446,7 @@ void MainWindow() {
 
         ImGui::SetCursorPos(ImVec2(start_x + (button_width + spacing) * 3, start_y));
         if (ImGui::Button("启动游戏", ImVec2(button_width, button_height))) {
-            // 处理启动游戏按钮点击
+            check_and_start_game(GetActiveWindow());  // 使用GameManager中定义的函数
         }
 
         // 恢复按钮样式
@@ -368,3 +458,17 @@ void MainWindow() {
         exit(0);
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+

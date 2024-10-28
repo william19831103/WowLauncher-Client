@@ -54,6 +54,12 @@
     <ClInclude Include="stb_image.h">
       <Filter>头文件\IMGUI</Filter>
     </ClInclude>
+    <ClInclude Include="GameManager.h">
+      <Filter>头文件\TroFile</Filter>
+    </ClInclude>
+    <ClInclude Include="Protocol.h">
+      <Filter>头文件\TroFile</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="imgui_impl_dx11.cpp">
@@ -79,6 +85,9 @@
     </ClCompile>
     <ClCompile Include="imgui_widgets.cpp">
       <Filter>头文件\IMGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="GameManager.cpp">
+      <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
