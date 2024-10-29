@@ -72,7 +72,7 @@ int WinMain(
     bool show_another_window = false;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
-    // 添加帧率控制变量
+    // 添加帧率控量
     const float TARGET_FPS = 60.0f;
     const float TARGET_FRAMETIME = 1000.0f / TARGET_FPS;
     LARGE_INTEGER frequency, last_time;
@@ -282,12 +282,13 @@ void MainWindow() {
     static bool serverOnline = true;
     static HWND main_hwnd = NULL;
     
-    if (first_time) {
+    if (first_time)
+    {
         LoadTextureFromFile("Queen.jpg", &g_background, &bg_width, &bg_height);
-        main_hwnd = GetActiveWindow();  // 保存窗口句柄
+        main_hwnd = GetActiveWindow();
         
-        // 获取服务器信息和通知
-        update_server_info(main_hwnd);  // 这里调用了 update_server_info
+        // 直接调用 initialize_server_info
+        initialize_server_info(main_hwnd);
         
         first_time = false;
     }
@@ -352,7 +353,7 @@ void MainWindow() {
             ImVec4(0.0f, 1.0f, 0.0f, 1.0f) :  // 在线时为绿色
             ImVec4(0.5f, 0.5f, 0.5f, 1.0f);   // 离线时为灰色
         
-        // 调整圆圈的垂直位置，使其与文字中心对齐
+        // 调整圆圈的垂位置，使其与文字中心对齐
         ImGui::GetWindowDrawList()->AddCircleFilled(
             ImVec2(circle_pos.x + circle_radius, 
                   circle_pos.y + (originalFontSize/2) + 2),  // +2 用于微调
@@ -365,16 +366,12 @@ void MainWindow() {
         ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]);
         ImGui::SetWindowFontScale(1.3f);
         
-        // 显示服务器名称（如果有）
         if (!ServerInfo::name.empty() && ServerInfo::isConnected) {
-            // 转换为 Unicode 显示
             int wlen = MultiByteToWideChar(CP_UTF8, 0, ServerInfo::name.c_str(), -1, NULL, 0);
             if (wlen > 0) {
                 std::vector<wchar_t> wstr(wlen);
                 if (MultiByteToWideChar(CP_UTF8, 0, ServerInfo::name.c_str(), -1, wstr.data(), wlen) > 0) {
-                    // 使用转换后的 UTF-8 字符串显示
-                    std::string utf8_name(ServerInfo::name);
-                    ImGui::Text("%s", utf8_name.c_str());
+                    ImGui::Text("%s", ServerInfo::name.c_str());
                 }
             }
         } else {
@@ -391,12 +388,9 @@ void MainWindow() {
         ImGui::SetCursorPos(ImVec2(start_x + button_width + spacing, 20));
         ImGui::BeginChild("通知区域", ImVec2(600, 400), true);
         ImGui::SetWindowFontScale(1.3f);
-        
-        // 使用默认字体（已设置为支持中文的字体）
         ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
-        ImGui::TextUnformatted(ServerInfo::notice.c_str());  // 使用 TextUnformatted 来显示 UTF-8 文本
+        ImGui::TextUnformatted(ServerInfo::notice.c_str());
         ImGui::PopTextWrapPos();
-        
         ImGui::SetWindowFontScale(1.0f);
         ImGui::EndChild();
 
