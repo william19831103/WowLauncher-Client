@@ -26,9 +26,3 @@ struct PacketHeader {
 };
 #pragma pack(pop)
 
-
-// 定义命令字符串
-namespace Command {
-    const std::string INIT_SERVER_INFO = "INIT_SERVER_INFO|";  // 服务器初始化信息
-    const std::string CHECK_PATCHES = "CHECK_PATCHES|"; //校验补丁
-}

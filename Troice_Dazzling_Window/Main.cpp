@@ -288,7 +288,7 @@ void MainWindow() {
         main_hwnd = GetActiveWindow();
         
         // 直接调用 initialize_server_info
-        initialize_server_info(main_hwnd);
+        initialize_server_info();
         
         first_time = false;
     }
@@ -412,7 +412,7 @@ void MainWindow() {
 
         ImGui::SetCursorPos(ImVec2(start_x + (button_width + spacing) * 3, start_y));
         if (ImGui::Button("启动游戏", ImVec2(button_width, button_height))) {
-            check_and_start_game(GetActiveWindow());  // 使用GameManager中定义的函数
+            check_and_start_game(main_hwnd);  // 传递窗口句柄
         }
 
         // 恢复按钮样式
